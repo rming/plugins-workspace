@@ -21,8 +21,6 @@ use tokio::sync::Mutex;
 
 use std::collections::HashMap;
 
-#[cfg(feature = "sqlite")]
-use std::{fs::create_dir_all, path::PathBuf};
 
 #[cfg(feature = "sqlite")]
 type Db = sqlx::sqlite::Sqlite;
@@ -59,34 +57,6 @@ impl Serialize for Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(feature = "sqlite")]
-/// Resolves the App's **file path** from the `AppHandle` context
-/// object
-fn app_path<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
-    #[allow(deprecated)] // FIXME: Change to non-deprecated function in Tauri v2
-    app.path_resolver()
-        .app_dir()
-        .expect("No App path was found!")
-}
-
-#[cfg(feature = "sqlite")]
-/// Maps the user supplied DB connection string to a connection string
-/// with a fully qualified file path to the App's designed "app_path"
-fn path_mapper(mut app_path: PathBuf, connection_string: &str) -> String {
-    app_path.push(
-        connection_string
-            .split_once(':')
-            .expect("Couldn't parse the connection string for DB!")
-            .1,
-    );
-
-    format!(
-        "sqlite:{}",
-        app_path
-            .to_str()
-            .expect("Problem creating fully qualified path to Database file!")
-    )
-}
 
 #[derive(Default)]
 struct DbInstances(Mutex<HashMap<String, Pool<Db>>>);
@@ -152,13 +122,7 @@ async fn load<R: Runtime>(
     migrations: State<'_, Migrations>,
     db: String,
 ) -> Result<String> {
-    #[cfg(feature = "sqlite")]
-    let fqdb = path_mapper(app_path(&app), &db);
-    #[cfg(not(feature = "sqlite"))]
     let fqdb = db.clone();
-
-    #[cfg(feature = "sqlite")]
-    create_dir_all(app_path(&app)).expect("Problem creating App directory!");
 
     if !Db::database_exists(&fqdb).await.unwrap_or(false) {
         Db::create_database(&fqdb).await?;
@@ -186,7 +150,6 @@ async fn close(db_instances: State<'_, DbInstances>, db: Option<String>) -> Resu
     } else {
         instances.keys().cloned().collect()
     };
-
     for pool in pools {
         let db = instances
             .get_mut(&pool) //
@@ -287,16 +250,11 @@ impl Builder {
             .setup_with_config(|app, config: Option<PluginConfig>| {
                 let config = config.unwrap_or_default();
 
-                #[cfg(feature = "sqlite")]
-                create_dir_all(app_path(app)).expect("problems creating App directory!");
 
                 tauri::async_runtime::block_on(async move {
                     let instances = DbInstances::default();
                     let mut lock = instances.0.lock().await;
                     for db in config.preload {
-                        #[cfg(feature = "sqlite")]
-                        let fqdb = path_mapper(app_path(app), &db);
-                        #[cfg(not(feature = "sqlite"))]
                         let fqdb = db.clone();
 
                         if !Db::database_exists(&fqdb).await.unwrap_or(false) {
