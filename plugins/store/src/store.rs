@@ -17,6 +17,8 @@ type SerializeFn =
 type DeserializeFn =
     fn(&[u8]) -> Result<HashMap<String, JsonValue>, Box<dyn std::error::Error + Send + Sync>>;
 
+const APP_DIR_NAME: &str = ".local-photos";
+
 fn default_serialize(
     cache: &HashMap<String, JsonValue>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -176,12 +178,8 @@ pub struct Store<R: Runtime> {
 impl<R: Runtime> Store<R> {
     /// Update the store from the on-disk state
     pub fn load(&mut self) -> Result<(), Error> {
-        let app_dir = self
-            .app
-            .path_resolver()
-            .app_data_dir()
-            .expect("failed to resolve app dir");
-        let store_path = app_dir.join(&self.path);
+        let home_dir = tauri::api::path::home_dir().expect("failed to resolve home dir");
+        let store_path = home_dir.join(APP_DIR_NAME).join("store").join(&self.path);
 
         let bytes = read(store_path)?;
 
@@ -193,12 +191,8 @@ impl<R: Runtime> Store<R> {
 
     /// Saves the store to disk
     pub fn save(&self) -> Result<(), Error> {
-        let app_dir = self
-            .app
-            .path_resolver()
-            .app_data_dir()
-            .expect("failed to resolve app dir");
-        let store_path = app_dir.join(&self.path);
+        let home_dir = tauri::api::path::home_dir().expect("failed to resolve home dir");
+        let store_path = home_dir.join(APP_DIR_NAME).join("store").join(&self.path);
 
         create_dir_all(store_path.parent().expect("invalid store path"))?;
 
