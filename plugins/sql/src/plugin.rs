@@ -22,6 +22,9 @@ use tokio::sync::Mutex;
 use std::collections::HashMap;
 
 #[cfg(feature = "sqlite")]
+use std::{fs::create_dir_all, path::PathBuf};
+
+#[cfg(feature = "sqlite")]
 type Db = sqlx::sqlite::Sqlite;
 #[cfg(feature = "mysql")]
 type Db = sqlx::mysql::MySql;
@@ -113,6 +116,17 @@ impl MigrationSource<'static> for MigrationList {
     }
 }
 
+#[cfg(feature = "sqlite")]
+fn ensure_database_dir(fqdb: &String) {
+    let db_file = fqdb
+        .split_once(':')
+        .expect("Couldn't parse the connection string for DB!")
+        .1;
+    let db_path = PathBuf::from(db_file);
+    let db_path_parent = db_path.parent().expect("Problem parse Database directory!");
+    create_dir_all(db_path_parent).expect("Problem creating Database directory!");
+}
+
 #[command]
 async fn load<R: Runtime>(
     #[allow(unused_variables)] app: AppHandle<R>,
@@ -121,6 +135,9 @@ async fn load<R: Runtime>(
     db: String,
 ) -> Result<String> {
     let fqdb = db.clone();
+
+    #[cfg(feature = "sqlite")]
+    ensure_database_dir(&fqdb);
 
     if !Db::database_exists(&fqdb).await.unwrap_or(false) {
         Db::create_database(&fqdb).await?;
@@ -248,7 +265,6 @@ impl Builder {
             .invoke_handler(tauri::generate_handler![load, execute, select, close])
             .setup(|app, api| {
                 let config = api.config().clone().unwrap_or_default();
-
                 tauri::async_runtime::block_on(async move {
                     let instances = DbInstances::default();
                     let mut lock = instances.0.lock().await;
