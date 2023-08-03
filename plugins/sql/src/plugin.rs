@@ -298,6 +298,8 @@ impl Builder {
                         let instances = &*app.state::<DbInstances>();
                         let instances = instances.0.lock().await;
                         for value in instances.values() {
+                            #[cfg(feature = "sqlite")]
+                            let _ = sqlx::query("VACUUM").execute(value).await;
                             value.close().await;
                         }
                     });
